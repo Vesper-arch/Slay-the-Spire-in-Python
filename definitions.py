@@ -55,3 +55,11 @@ class CardCategory(StrEnum):
     CARD = 'Card'
     POTION = 'Potion'
     RELIC = 'Relic'
+
+class PlayerClass(StrEnum):
+    IRONCLAD = 'Ironclad'
+    SILENT = 'Silent'
+    DEFECT = 'Defect'
+    WATCHER = 'Watcher'
+    COLORLESS = 'Colorless'
+    ANY = 'Any'
