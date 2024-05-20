@@ -141,7 +141,6 @@ class Combat:
 
         self.active_enemies = list(filter(lambda enemy: enemy.state == State.ALIVE, self.all_enemies))
         player.start_of_combat_relics(self.tier)
-        return act1_boss[0].name
 
     def play_potion(self):
         if len(player.potions) == 0:
