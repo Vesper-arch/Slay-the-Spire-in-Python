@@ -7,7 +7,7 @@ from copy import deepcopy
 from ansi_tags import ansiprint
 from items import Card, relics, cards, potions, activate_sacred_bark
 from helper import active_enemies, combat_turn, view, gen, ei
-from definitions import CombatTier
+from definitions import CombatTier, State
 
 class Player:
     """
@@ -723,6 +723,7 @@ class Enemy:
         self.max_health = actual_health
         self.block = block
         self.name = name
+        self.state = State.ALIVE
         self.third_person_ref = f"{self.name}'s" # Python f-strings suck so I have to use this
         self.past_moves = ['place'] * 3
         self.intent: str = ''

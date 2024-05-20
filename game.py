@@ -6,7 +6,7 @@ from time import sleep
 
 import game_map
 from ansi_tags import ansiprint
-from definitions import CombatTier, EncounterType
+from definitions import CombatTier, EncounterType, State
 from enemy_catalog import (
     create_act1_boss,
     create_act1_elites,
@@ -22,10 +22,13 @@ from shop import Shop
 cards['Whirlwind']['Energy'] = player.energy
 
 class Combat:
-    def __init__(self, player, tier, gm):
+    def __init__(self, player, tier, gm, all_enemies=None):
         self.bus = bus
         self.player = player
-        self.all_enemies = None
+        self.all_enemies = all_enemies if all_enemies else []
+        self.active_enemies = list(filter(lambda enemy: enemy.state == State.ALIVE, self.all_enemies))
+        self.previous_enemy_state = ()
+        self.death_messages = []
         self.tier = tier
         self.game_map = gm
         self.turn = 1
@@ -35,25 +38,19 @@ class Combat:
         self.start()
 
         if relics['Preserved Insect'] in player.relics and self.tier == CombatTier.ELITE:
-            for enemy in active_enemies:
+            for enemy in self.active_enemies:
                 enemy.health -= round(enemy.health * 0.25)
             ansiprint('<bold>Preserved Insect</bold> <blue>activated</blue>.')
         # Combat automatically ends when all enemies are dead.
-        while len(active_enemies) > 0:
+        while len(self.active_enemies) > 0:
             player.start_turn()
-            for enemy in active_enemies:
+            for enemy in self.active_enemies:
                 enemy.start_turn()
             while True:
-                if len(active_enemies) == 0:
-                    self.end(self.tier, killed_enemies=True)
-                    break
-                if all((getattr(enemy, 'escaped', False) for enemy in active_enemies)):
-                    self.end(self.tier, robbed=True)
-                    break
                 print(f"Turn {self.turn}: ")
                 _ = player.draw_cards(True, 1) if len(player.hand) == 0 and relics['Unceasing Top'] in player.relics else None # Assigned to _ so my linter shuts up
                 # Shows the player's potions, cards(in hand), amount of cards in discard and draw pile, and shows the status for you and the enemies.
-                view.display_ui(player, active_enemies)
+                view.display_ui(player, self.active_enemies)
                 print("1-0: Play card, P: Play Potion, M: View Map, D: View Deck, A: View Draw Pile, S: View Discard Pile, X: View Exhaust Pile, E: End Turn, F: View Debuffs and Buffs")
                 action = input("> ").lower()
                 other_options = {
@@ -61,14 +58,14 @@ class Combat:
                     'a': lambda: view.view_piles(player.draw_pile, player),
                     's': lambda: view.view_piles(player.discard_pile, player), 
                     'x': lambda: view.view_piles(player.exhaust_pile, player),
-                    'p': play_potion, 
-                    'f': lambda: ei.full_view(player, active_enemies), 
+                    'p': self.play_potion, 
+                    'f': lambda: ei.full_view(player, self.active_enemies), 
                     'm': lambda: view.view_map(self.game_map)
                 }
                 if action.isdigit():
                     option = int(action) - 1
                     if option + 1 in range(len(player.hand) + 1):
-                        play_card(player.hand[option])
+                        self.play_card(player.hand[option])
                     else:
                         view.clear()
                         continue
@@ -83,7 +80,7 @@ class Combat:
                 sleep(1)
                 view.clear()
             player.end_player_turn()
-            for enemy in active_enemies:
+            for enemy in self.active_enemies:
                 enemy.execute_move()
                 input('Press enter to continue > ')
                 view.clear()
@@ -110,7 +107,7 @@ class Combat:
             sleep(1.5)
             view.clear()
         elif escaped is True:
-            active_enemies.clear()
+            self.active_enemies.clear()
             print("Escaped...")
             player.in_combat = False
             sleep(0.8)
@@ -118,7 +115,7 @@ class Combat:
             sleep(1.5)
             view.clear()
         elif robbed:
-            active_enemies.clear()
+            self.active_enemies.clear()
             print("Robbed...")
             player.in_combat = False
             sleep(0.8)
@@ -130,19 +127,72 @@ class Combat:
         player.in_combat = True
         # Shuffles the player's deck into their draw pile
         player.draw_pile = random.sample(player.deck, len(player.deck))
-        act1_normal_encounters  = create_act1_normal_encounters()
-        act1_elites = create_act1_elites()
-        act1_boss = create_act1_boss()
-        encounter_types = {
-            CombatTier.NORMAL: act1_normal_encounters,
-            CombatTier.ELITE: act1_elites,
-            CombatTier.BOSS: act1_boss
-        }
-        encounter_enemies = encounter_types[self.tier][0]
-        for enemy in encounter_enemies:
-            active_enemies.append(enemy)
+        if not self.all_enemies:
+            act1_normal_encounters  = create_act1_normal_encounters()
+            act1_elites = create_act1_elites()
+            act1_boss = create_act1_boss()
+            encounter_types = {
+                CombatTier.NORMAL: act1_normal_encounters,
+                CombatTier.ELITE: act1_elites,
+                CombatTier.BOSS: act1_boss
+            }
+            encounter_enemies = encounter_types[self.tier][0]
+            self.all_enemies = encounter_enemies
+
+        self.active_enemies = list(filter(lambda enemy: enemy.state == State.ALIVE, self.all_enemies))
         player.start_of_combat_relics(self.tier)
         return act1_boss[0].name
+
+    def play_potion(self):
+        if len(player.potions) == 0:
+            ansiprint("<red>You have no potions.</red>")
+            return
+        if relics['Sacred Bark'] in player.relics:
+            activate_sacred_bark()
+        view.view_potions(player.potions, player.max_potions)
+        raise NotImplementedError
+
+    def play_card(self, card):
+        while True:
+            # Prevents the player from using a card that they don't have enough energy for.
+            energy_cost = card.get("Energy", float('inf')) if card.get("Energy", float('inf')) != -1 else player.energy
+            if energy_cost > player.energy:
+                ansiprint("<red>You don't have enough energy to use this card.</red>")
+                sleep(1)
+                view.clear()
+                return
+            if player.choker_cards_played == 6:
+                ansiprint("You have already played 6 cards this turn!")
+                sleep(1)
+                view.clear()
+                return
+            if card.get("Target") == 'Single' and len(self.active_enemies) > 1:
+                try:
+                    target = int(input("Choose an enemy to target > ")) - 1
+                    _ = self.active_enemies[target]
+                except (IndexError, ValueError):
+                    ansiprint(f"\u001b[1A\u001b[100D<red>You have to enter a number between 1 and {len(self.active_enemies)}</red>", end='')
+                    sleep(1)
+                    print("\u001b[2K\u001b[100D", end='')
+                    continue
+            elif len(self.active_enemies) == 1:
+                target = 0
+            else:
+                target = 0
+            player.use_card(card, self.active_enemies[target], False, player.hand)
+            break
+
+    def update(self):
+        self.state_check()
+        self.previous_enemy_state = tuple(enemy.state for enemy in self.all_enemies)
+        self.self.active_enemies = list(filter(lambda enemy: enemy.state == State.ALIVE, self.all_enemies))
+
+    def state_check(self):
+        current_states = tuple(enemy.state for enemy in self.all_enemies)
+
+        for i in range(max(1, len(self.all_enemies) - 1)):
+            if self.previous_enemy_state[i] != current_states[i]:
+                self.death_messages.append(current_states[i])
 
 def rest_site():
     """
@@ -266,45 +316,6 @@ def unknown(game_map) -> None:
         ansiprint(player)
         chosen_event = choose_event()
         chosen_event()
-
-def play_potion():
-    if len(player.potions) == 0:
-        ansiprint("<red>You have no potions.</red>")
-        return
-    if relics['Sacred Bark'] in player.relics:
-        activate_sacred_bark()
-    view.view_potions(player.potions, player.max_potions)
-    input('This is currently not implemented. Press enter to leave > ')
-
-def play_card(card):
-    while True:
-        # Prevents the player from using a card that they don't have enough energy for.
-        energy_cost = card.get("Energy", float('inf')) if card.get("Energy", float('inf')) != -1 else player.energy
-        if energy_cost > player.energy:
-            ansiprint("<red>You don't have enough energy to use this card.</red>")
-            sleep(1)
-            view.clear()
-            return
-        if player.choker_cards_played == 6:
-            ansiprint("You have already played 6 cards this turn!")
-            sleep(1)
-            view.clear()
-            return
-        if card.get("Target") == 'Single' and len(active_enemies) > 1:
-            try:
-                target = int(input("Choose an enemy to target > ")) - 1
-                _ = active_enemies[target]
-            except (IndexError, ValueError):
-                ansiprint(f"\u001b[1A\u001b[100D<red>You have to enter a number between 1 and {len(active_enemies)}</red>", end='')
-                sleep(1)
-                print("\u001b[2K\u001b[100D", end='')
-                continue
-        elif len(active_enemies) == 1:
-            target = 0
-        else:
-            target = 0
-        player.use_card(card, active_enemies[target], False, player.hand)
-        break
 
 def play(encounter: EncounterType, gm: game_map.GameMap):
     if encounter.type == EncounterType.START:

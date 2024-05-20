@@ -53,3 +53,10 @@ class CardCategory(StrEnum):
     CARD = 'Card'
     POTION = 'Potion'
     RELIC = 'Relic'
+
+class State(StrEnum):
+    ALIVE = 'Alive'
+    DEAD = 'Dead'
+    ESCAPED = 'Escaped'
+    INTANGIBLE = 'Intangible'
+
