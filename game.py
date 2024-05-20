@@ -56,9 +56,15 @@ class Combat:
                 view.display_ui(player, active_enemies)
                 print("1-0: Play card, P: Play Potion, M: View Map, D: View Deck, A: View Draw Pile, S: View Discard Pile, X: View Exhaust Pile, E: End Turn, F: View Debuffs and Buffs")
                 action = input("> ").lower()
-                other_options = {'d': lambda: view.view_piles(player.deck, player), 'a': lambda: view.view_piles(player.draw_pile, player),
-                         's': lambda: view.view_piles(player.discard_pile, player), 'x': lambda: view.view_piles(player.exhaust_pile, player),
-                         'p': play_potion, 'f': lambda: ei.full_view(player, active_enemies), 'm': lambda: view.view_map(self.game_map)}
+                other_options = {
+                    'd': lambda: view.view_piles(player.deck, player), 
+                    'a': lambda: view.view_piles(player.draw_pile, player),
+                    's': lambda: view.view_piles(player.discard_pile, player), 
+                    'x': lambda: view.view_piles(player.exhaust_pile, player),
+                    'p': play_potion, 
+                    'f': lambda: ei.full_view(player, active_enemies), 
+                    'm': lambda: view.view_map(self.game_map)
+                }
                 if action.isdigit():
                     option = int(action) - 1
                     if option + 1 in range(len(player.hand) + 1):
